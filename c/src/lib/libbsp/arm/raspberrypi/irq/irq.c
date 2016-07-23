@@ -90,6 +90,11 @@ void bsp_interrupt_dispatch(void)
   {
       vector = BCM2835_IRQ_ID_SPI;
   }
+  /* SD Card */
+  else if ( BCM2835_REG(BCM2835_IRQ_PENDING2) & BCM2835_BIT(30) )
+  {
+      vector = BCM2835_IRQ_ID_SD;
+  }
 
   if ( vector < 255 )
   {
@@ -143,7 +148,11 @@ rtems_status_code bsp_interrupt_vector_enable(rtems_vector_number vector)
   {
       BCM2835_REG(BCM2835_IRQ_ENABLE2) = BCM2835_BIT(22);
   }
-  
+  else if ( vector == BCM2835_IRQ_ID_SD )
+  {
+      BCM2835_REG(BCM2835_IRQ_ENABLE2) = BCM2835_BIT(30);
+  }
+
   rtems_interrupt_enable(level);
 
   return RTEMS_SUCCESSFUL;
@@ -192,6 +201,10 @@ rtems_status_code bsp_interrupt_vector_disable(rtems_vector_number vector)
   else if ( vector == BCM2835_IRQ_ID_SPI )
   {
       BCM2835_REG(BCM2835_IRQ_DISABLE2) = BCM2835_BIT(22);
+  }
+  else if ( vector == BCM2835_IRQ_ID_SD )
+  {
+      BCM2835_REG(BCM2835_IRQ_DISABLE2) = BCM2835_BIT(30);
   }
 
   rtems_interrupt_enable(level);

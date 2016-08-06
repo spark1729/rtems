@@ -9,6 +9,7 @@
 #include <bsp.h>
 #include <bsp/raspberrypi.h>
 #include <bsp/dma.h>
+#include <bsp/irq.h>
 #include <stdlib.h>
 #include <errno.h>
 
@@ -64,7 +65,18 @@
  * @brief Table that indicates if a channel is currently occupied.
  */
 static struct bcm_dma_ch bcm_dma_ch[ BCM_DMA_CH_MAX ];
-static Atomic_Flag       dma_mutex;
+
+rtems_status_code rpi_dma_reset( int ch );
+
+int bus_dmamap_load_buffer(
+  bus_dma_segment_t segs[],
+  void             *buf,
+  unsigned int      buflen,
+  int               flags,
+  vm_offset_t      *lastaddrp,
+  int              *segp,
+  int               first
+);
 
 static void rpi_dmamap_cb(
   void              *arg,
@@ -124,7 +136,7 @@ rtems_status_code rpi_dma_reset( int ch )
   /* Reset control block */
   cb = bcm_dma_ch[ ch ].cb;
   bzero( cb, sizeof( *cb ) );
-  cb->info - INFO_WAIT_RESP;
+  cb->info = INFO_WAIT_RESP;
 
   return RTEMS_SUCCESSFUL;
 }
@@ -138,10 +150,9 @@ rtems_status_code rpi_dma_allocate( int req_ch )
   if ( req_ch >= BCM_DMA_CH_MAX )
     return ( RTEMS_INVALID_ID );
 
-  if ( _Atomic_Flag_test_and_set( &dma_mutex,
+  if ( _Atomic_Flag_test_and_set( &bcm_dma_ch[ req_ch ].dma_lock,
          ATOMIC_ORDER_ACQUIRE ) != 0 ) {
-    printk( "Could not lock the DMA mutex\n" );
-    return RTEMS_UNSATISFIED;
+    return RTEMS_RESOURCE_IN_USE;
   }
 
   /* Check whether a channel is in use or not and allocate accordingly */
@@ -152,7 +163,7 @@ rtems_status_code rpi_dma_allocate( int req_ch )
     return ( RTEMS_RESOURCE_IN_USE );
   }
 
-  _Atomic_Flag_clear( &dma_mutex, ATOMIC_ORDER_RELEASE );
+  _Atomic_Flag_clear( &bcm_dma_ch[ req_ch ].dma_lock, ATOMIC_ORDER_RELEASE );
 
   return ( RTEMS_SUCCESSFUL );
 }
@@ -162,12 +173,11 @@ rtems_status_code rpi_dma_allocate( int req_ch )
  */
 rtems_status_code rpi_dma_free( int ch )
 {
-  rtems_status_code status_code;
+  rtems_status_code status_code = RTEMS_SUCCESSFUL;
 
-  if ( _Atomic_Flag_test_and_set( &dma_mutex,
+  if ( _Atomic_Flag_test_and_set( &bcm_dma_ch[ ch ].dma_lock,
          ATOMIC_ORDER_ACQUIRE ) != 0 ) {
-    printk( "Could not lock the DMA mutex\n" );
-    return RTEMS_UNSATISFIED;
+    return RTEMS_RESOURCE_IN_USE;
   }
 
   /* Check the channel number provided */
@@ -185,7 +195,11 @@ rtems_status_code rpi_dma_free( int ch )
     status_code = rpi_dma_reset( ch );
   }
 
-  _Atomic_Flag_clear( &dma_mutex, ATOMIC_ORDER_RELEASE );
+  status_code = rtems_interrupt_handler_remove( BCM2835_IRQ_ID_DMA_CH0 + ch,
+    rpi_dma_intr,
+    NULL );
+
+  _Atomic_Flag_clear( &bcm_dma_ch[ ch ].dma_lock, ATOMIC_ORDER_RELEASE );
 
   return ( status_code );
 }
@@ -381,6 +395,10 @@ rtems_status_code rpi_dma_start(
     (void *) bcm_dma_ch[ ch ].dma_map->buffer_begin,
     bcm_dma_ch[ ch ].dma_map->buffer_size );
 
+  rtems_cache_invalidate_multiple_data_lines(
+    (void *) bcm_dma_ch[ ch ].dma_map->buffer_begin,
+    bcm_dma_ch[ ch ].dma_map->buffer_size );
+
   /* Write the physical address of the control block into the register */
   BCM2835_REG( BCM_DMA_CBADDR( ch ) ) = bcm_dma_ch[ ch ].vc_cb;
 
@@ -425,7 +443,7 @@ int bus_dmamap_load_buffer(
 )
 {
   unsigned int sgsize;
-  unsigned int curaddr, lastaddr, baddr, bmask;
+  unsigned int curaddr, lastaddr, bmask;
   vm_offset_t  vaddr = (vm_offset_t) buf;
   int          seg;
 
@@ -482,74 +500,84 @@ int bus_dmamap_load_buffer(
   return ( buflen != 0 ? 27 : 0 );
 }
 
-static int rpi_dma_init()
+int rpi_dma_init( int channel )
 {
-  int                i;
   struct bcm_dma_ch *ch;
   void              *cb_virt;
-  vm_paddr_t         cb_phys;
+  vm_paddr_t         cb_phys = 0;
   int                error, nsegs;
   vm_offset_t        lastaddr;
+  bus_dma_segment_t  dm_segments[ 1 ];
 
   /* Setup Initial Setting */
-  for ( i = 0; i < BCM_DMA_CH_MAX; i++ ) {
-    bus_dma_segment_t dm_segments[ 1 ];
 
-    ch = &bcm_dma_ch[ i ];
+  /* Check the channel number provided */
+  if ( channel < 0 || channel >= BCM_DMA_CH_MAX )
+    return ( RTEMS_INVALID_ID );
 
-    bzero( ch, sizeof( struct bcm_dma_ch ) );
-    ch->ch = i;
-    ch->flags = BCM_DMA_CH_UNMAP;
+  /* Check whether the channel is in use */
+  if ( !( bcm_dma_ch[ channel ].flags & BCM_DMA_CH_USED ) )
+    return ( RTEMS_RESOURCE_IN_USE );
 
-    ch->dma_map = malloc( sizeof( struct bus_dmamap ) );
+  ch = &bcm_dma_ch[ channel ];
 
-    if ( ch->dma_map == NULL ) {
-      return ENOMEM;
-    }
+  bzero( ch, sizeof( struct bcm_dma_ch ) );
+  ch->ch = channel;
+  ch->flags = BCM_DMA_CH_UNMAP;
 
-    /* Alignment = 1 , Boundary = 0 */
-    cb_virt = rtems_cache_coherent_allocate(
-      sizeof( struct bcm_dma_cb ), 1, 0 );
+  ch->dma_map = malloc( sizeof( struct bus_dmamap ) );
 
-    if ( cb_virt == NULL ) {
-      free( ch->dma_map );
-
-      return ENOMEM;
-    }
-
-    ch->dma_map->buffer_begin = cb_virt;
-    ch->dma_map->buffer_size = sizeof( struct bcm_dma_cb );
-
-    memset( cb_virt, 0, sizeof( struct bcm_dma_cb ) );
-
-    /*
-     * Least alignment for busdma-allocated stuff is cache
-     * line size, so just make sure nothing stupid happened
-     * and we got properly aligned address
-     */
-    if ( (unsigned long int) cb_virt & 0x1f )
-      break;
-
-//FIXME : Verify mapping buffer into bus space using the dmamap
-    lastaddr = (vm_offset_t) 0;
-    nsegs = 0;
-
-    error = bus_dmamap_load_buffer( dm_segments, cb_virt,
-      sizeof( struct bcm_dma_cb ), 0x00, &lastaddr, &nsegs, 1 );
-
-    if ( error == 0 )
-      rpi_dmamap_cb( &cb_phys, dm_segments, nsegs + 1, 0 );
-    else
-      rpi_dmamap_cb( &cb_phys, NULL, 0, error );
-
-    ch->cb = cb_virt;
-    ch->vc_cb = cb_phys;
-    ch->flags = BCM_DMA_CH_FREE;
-    ch->cb->info = INFO_WAIT_RESP;
-
-    /* reset DMA */
-    BCM2835_REG( BCM_DMA_CS( i ) ) = CS_RESET;
+  if ( ch->dma_map == NULL ) {
+    return ENOMEM;
   }
+
+  /* Alignment = 1 , Boundary = 0 */
+  cb_virt = rtems_cache_aligned_malloc(
+    sizeof( struct bcm_dma_cb ) );
+
+  if ( cb_virt == NULL ) {
+    free( ch->dma_map );
+
+    return ENOMEM;
+  }
+
+  ch->dma_map->buffer_begin = cb_virt;
+  ch->dma_map->buffer_size = sizeof( struct bcm_dma_cb );
+
+  memset( cb_virt, 0, sizeof( struct bcm_dma_cb ) );
+
+  /*
+   * Least alignment for busdma-allocated stuff is cache
+   * line size, so just make sure nothing stupid happened
+   * and we got properly aligned address
+   */
+  if ( (unsigned long int) cb_virt & 0x1f )
+    return RTEMS_UNSATISFIED;
+
+  lastaddr = (vm_offset_t) 0;
+  nsegs = 0;
+
+  error = bus_dmamap_load_buffer( dm_segments, cb_virt,
+    sizeof( struct bcm_dma_cb ), 0x00, &lastaddr, &nsegs, 1 );
+
+  if ( error == 0 )
+    rpi_dmamap_cb( &cb_phys, dm_segments, nsegs + 1, 0 );
+  else
+    rpi_dmamap_cb( &cb_phys, NULL, 0, error );
+
+  ch->cb = cb_virt;
+  ch->vc_cb = cb_phys;
+  ch->flags = BCM_DMA_CH_FREE;
+  ch->cb->info = INFO_WAIT_RESP;
+
+  rtems_interrupt_handler_install( BCM2835_IRQ_ID_DMA_CH0 + channel,
+    "DMA copy",
+    RTEMS_INTERRUPT_UNIQUE,
+    rpi_dma_intr,
+    NULL );
+
+  /* reset DMA */
+  BCM2835_REG( BCM_DMA_CS( channel ) ) = CS_RESET;
 
   return 0;
 }

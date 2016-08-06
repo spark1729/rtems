@@ -64,6 +64,11 @@ void bsp_interrupt_dispatch(void)
   {
       vector = BCM2835_IRQ_ID_UART;
   }
+  /* DMA 0 */
+  else if ( BCM2835_REG(BCM2835_IRQ_PENDING1) & BCM2835_BIT(16) )
+  {
+      vector = BCM2835_IRQ_ID_DMA_CH0;
+  }
   /* GPIO 0*/
   else if ( BCM2835_REG(BCM2835_IRQ_PENDING2) & BCM2835_BIT(17) )
   {
@@ -114,6 +119,11 @@ rtems_status_code bsp_interrupt_vector_enable(rtems_vector_number vector)
   {
       BCM2835_REG(BCM2835_IRQ_ENABLE2) =  BCM2835_BIT(25);
   }
+  /* DMA 0 */
+  else if ( vector == BCM2835_IRQ_ID_DMA_CH0 )
+  {
+      BCM2835_REG(BCM2835_IRQ_ENABLE1) =  BCM2835_BIT(16);
+  }
   /* GPIO 0 */
   else if ( vector == BCM2835_IRQ_ID_GPIO_0 )
   {
@@ -163,6 +173,11 @@ rtems_status_code bsp_interrupt_vector_disable(rtems_vector_number vector)
   else if ( vector == BCM2835_IRQ_ID_UART )
   {
       BCM2835_REG(BCM2835_IRQ_DISABLE2) = BCM2835_BIT(25);
+  }
+  /* DMA 0 */
+  else if ( vector == BCM2835_IRQ_ID_DMA_CH0 )
+  {
+      BCM2835_REG(BCM2835_IRQ_DISABLE1) = BCM2835_BIT(16);
   }
   /* GPIO 0 */
   else if ( vector == BCM2835_IRQ_ID_GPIO_0 )

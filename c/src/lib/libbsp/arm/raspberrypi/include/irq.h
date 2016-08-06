@@ -35,6 +35,11 @@
 
 #define BCM2835_INTC_TOTAL_IRQ       64 + 8
 
+/* DMA Interrupt is routed to IRQ 16 for DMA Channel 0,
+   IRQ 17 for Channel 1, and so on till IRQ 28 for Channel 12.
+ */
+
+#define BCM2835_IRQ_ID_DMA_CH0       16
 
 #define BCM2835_IRQ_ID_AUX           29
 #define BCM2835_IRQ_ID_SPI_SLAVE     43

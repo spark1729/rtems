@@ -135,6 +135,13 @@ int bcm2835_mailbox_get_board_model( bcm2835_get_board_spec_entries *_entries );
 
 int bcm2835_mailbox_get_board_revision(
   bcm2835_get_board_spec_entries *_entries );
+
+typedef struct {
+  uint64_t board_serial;
+} bcm2835_get_board_serial_entries;
+
+int bcm2835_mailbox_get_board_serial(
+  bcm2835_get_board_serial_entries *_entries );
 /** @} */
 
 #endif /* LIBBSP_ARM_RASPBERRYPI_VC_H */

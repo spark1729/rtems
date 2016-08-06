@@ -398,3 +398,27 @@ int bcm2835_mailbox_get_board_revision(
 
   return 0;
 }
+
+int bcm2835_mailbox_get_board_serial(
+  bcm2835_get_board_serial_entries *_entries )
+{
+  struct {
+    bcm2835_mbox_buf_hdr hdr;
+    bcm2835_mbox_tag_get_board_serial get_board_serial;
+    uint32_t end_tag;
+  } buffer BCM2835_MBOX_BUF_ALIGN_ATTRIBUTE;
+  BCM2835_MBOX_INIT_BUF( &buffer );
+  BCM2835_MBOX_INIT_TAG_NO_REQ( &buffer.get_board_serial,
+    BCM2835_MAILBOX_TAG_GET_BOARD_SERIAL );
+  bcm2835_mailbox_buffer_flush_and_invalidate( &buffer, sizeof( &buffer ) );
+
+  if ( bcm2835_mailbox_send_read_buffer( &buffer ) )
+    return -1;
+
+  _entries->board_serial = buffer.get_board_serial.body.resp.board_serial;
+
+  if ( !bcm2835_mailbox_buffer_suceeded( &buffer.hdr ) )
+    return -2;
+
+  return 0;
+}

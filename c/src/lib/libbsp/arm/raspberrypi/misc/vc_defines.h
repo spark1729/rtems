@@ -179,6 +179,17 @@ typedef struct {
 
 #define BCM2835_MAILBOX_TAG_GET_BOARD_MAC       0x00010003
 #define BCM2835_MAILBOX_TAG_GET_BOARD_SERIAL    0x00010004
+typedef struct {
+  bcm2835_mbox_tag_hdr tag_hdr;
+  union {
+    struct {
+    } req;
+    struct {
+      uint64_t board_serial;
+    } resp;
+  } body;
+} bcm2835_mbox_tag_get_board_serial;
+
 #define BCM2835_MAILBOX_TAG_GET_ARM_MEMORY      0x00010005
 typedef struct {
   bcm2835_mbox_tag_hdr tag_hdr;

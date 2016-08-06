@@ -217,6 +217,18 @@ typedef struct {
 } bcm2835_mbox_tag_get_vc_memory;
 
 #define BCM2835_MAILBOX_TAG_GET_CLOCKS          0x00010007
+typedef struct {
+  bcm2835_mbox_tag_hdr tag_hdr;
+  union {
+    struct {
+      uint32_t clock_id;
+    } req;
+    struct {
+      uint32_t clock_id;
+      uint32_t clock_rate;
+    } resp;
+  } body;
+} bcm2835_mbox_tag_get_clock_rate;
 
 /* Config */
 #define BCM2835_MAILBOX_TAG_GET_CMD_LINE        0x00050001

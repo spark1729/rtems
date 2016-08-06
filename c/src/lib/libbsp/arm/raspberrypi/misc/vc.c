@@ -447,3 +447,29 @@ int bcm2835_mailbox_get_board_serial(
 
   return 0;
 }
+
+int bcm2835_mailbox_get_clock_rate(
+  bcm2835_get_clock_rate_entries *_entries )
+{
+  struct {
+    bcm2835_mbox_buf_hdr hdr;
+    bcm2835_mbox_tag_get_clock_rate get_clock_rate;
+    uint32_t end_tag;
+  } buffer BCM2835_MBOX_BUF_ALIGN_ATTRIBUTE;
+  BCM2835_MBOX_INIT_BUF( &buffer );
+  BCM2835_MBOX_INIT_TAG_NO_REQ( &buffer.get_clock_rate,
+    BCM2835_MAILBOX_TAG_GET_CLOCK_RATE );
+  buffer.get_clock_rate.body.req.clock_id = _entries->clock_id;
+  bcm2835_mailbox_buffer_flush_and_invalidate( &buffer, sizeof( &buffer ) );
+
+  if ( bcm2835_mailbox_send_read_buffer( &buffer ) )
+    return -1;
+
+  _entries->clock_id = buffer.get_clock_rate.body.resp.clock_id;
+  _entries->clock_rate = buffer.get_clock_rate.body.resp.clock_rate;
+
+  if ( !bcm2835_mailbox_buffer_suceeded( &buffer.hdr ) )
+    return -2;
+
+  return 0;
+}

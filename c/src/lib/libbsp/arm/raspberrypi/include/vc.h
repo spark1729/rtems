@@ -106,6 +106,8 @@ typedef struct {
 #define BCM2835_MAILBOX_POWER_STATE_NODEV ( 1 << 1 )
 int bcm2835_mailbox_set_power_state( bcm2835_set_power_state_entries *_entries );
 
+int bcm2835_mailbox_get_power_state( bcm2835_set_power_state_entries *_entries );
+
 typedef struct {
   uint32_t base;
   size_t size;

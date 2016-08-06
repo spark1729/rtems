@@ -246,6 +246,18 @@ typedef struct {
 #define BCM2835_MAILBOX_POWER_UDID_CCP2TX            0x00000008
 
 #define BCM2835_MAILBOX_TAG_GET_POWER_STATE     0x00020001
+typedef struct {
+  bcm2835_mbox_tag_hdr tag_hdr;
+  union {
+    struct {
+      uint32_t dev_id;
+    } req;
+    struct {
+      uint32_t dev_id;
+      uint32_t state;
+    } resp;
+  } body;
+} bcm2835_mbox_tag_get_power_state;
 
 #define BCM2835_MAILBOX_POWER_STATE_RESP_ON       (1 << 0)
 #define BCM2835_MAILBOX_POWER_STATE_RESP_NODEV    (1 << 1)

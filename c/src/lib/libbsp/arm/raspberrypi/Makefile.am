@@ -51,6 +51,7 @@ include_bsp_HEADERS += include/rpi-gpio.h
 include_bsp_HEADERS += include/i2c.h
 include_bsp_HEADERS += include/spi.h
 include_bsp_HEADERS += include/mailbox.h
+include_bsp_HEADERS += include/dma.h
 include_bsp_HEADERS += include/vc.h
 include_bsp_HEADERS += include/rpi-fb.h
 include_bsp_HEADERS += console/fbcons.h
@@ -123,6 +124,9 @@ libbsp_a_SOURCES += console/usart.c
 libbsp_a_SOURCES += console/fb.c
 libbsp_a_SOURCES += console/fbcons.c
 libbsp_a_SOURCES += console/outch.c
+
+# DMA
+libbsp_a_SOURCES += misc/dma.c
 
 # Mailbox
 libbsp_a_SOURCES += misc/mailbox.c
